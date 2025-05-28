@@ -1,8 +1,88 @@
 package resources
 
 import (
+	"fmt"
 	"math"
+	"strings"
 )
+
+func calculate_entropy(instruments []Instrument) float64 {
+	var totalEntropy float64
+	for _, instrument := range instruments {
+		p := instrument.p
+		if p == 0.0 || p == 1.0 {
+			totalEntropy += 0.0
+		} else {
+			totalEntropy += -(p*math.Log(p) + (1-p)*math.Log(1-p))
+		}
+	}
+	return totalEntropy
+}
+
+func calculate_expected_energy(instruments []Instrument) float64 {
+	var totalExpectedEnergy float64
+	for _, instrument := range instruments {
+		p := instrument.p
+		a := float64(instrument.a)
+		b := float64(instrument.b)
+		totalExpectedEnergy += p*a + (1-p)*(-b)
+	}
+	return totalExpectedEnergy
+}
+
+func generate_memo_key(instruments []Instrument) string {
+	var sb strings.Builder
+	for _, inst := range instruments {
+		sb.WriteString(fmt.Sprintf("%.6f,%d,%d|", inst.p, inst.a, inst.b))
+	}
+	return sb.String()
+}
+
+func solve(instruments []Instrument, memo map[string]float64) float64 {
+	if len(instruments) <= 1 {
+		return 0.0
+	}
+
+	key := generate_memo_key(instruments)
+	if val, ok := memo[key]; ok {
+		return val
+	}
+
+	max_total_energy_for_this_configuration := math.Inf(-1)
+	cost_of_observation := 0.2 // ħ/20 where ħ=4
+
+	for i := 0; i < len(instruments)-1; i++ { // i is the index of the last instrument in the left group
+		left_group := instruments[0 : i+1]
+		right_group := instruments[i+1 : len(instruments)]
+
+		h_left := calculate_entropy(left_group)
+		e_left := calculate_expected_energy(left_group)
+		h_right := calculate_entropy(right_group)
+		e_right := calculate_expected_energy(right_group)
+
+		current_step_energy := 0.0
+		if h_left < h_right {
+			current_step_energy = e_left + solve(right_group, memo) - cost_of_observation
+		} else if h_right < h_left {
+			current_step_energy = e_right + solve(left_group, memo) - cost_of_observation
+		} else { // h_left == h_right, right side is considered low entropy
+			current_step_energy = e_right + solve(left_group, memo) - cost_of_observation
+		}
+		max_total_energy_for_this_configuration = math.Max(max_total_energy_for_this_configuration, current_step_energy)
+	}
+
+	result_for_memo := 0.0
+	if max_total_energy_for_this_configuration < 0.0 {
+		result_for_memo = 0.0
+	} else {
+		result_for_memo = math.Ceil(max_total_energy_for_this_configuration / 2.0)
+	}
+
+	memo[key] = result_for_memo
+	return result_for_memo
+}
+
+type ExamContext struct{}
 
 /*
 
@@ -66,6 +146,7 @@ instruments22 = [
 */
 
 func (context ExamContext) doAnswer(param Param) Answer {
-	
-	return Answer{result: 0}
+	memo := make(map[string]float64)
+	final_energy_float := solve(param.instruments, memo)
+	return Answer{result: int(final_energy_float)}
 }
